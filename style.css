@@ -158,6 +158,16 @@ tfoot td{background:var(--surface-2);font-weight:700;border-top:1px solid var(--
 .modal{position:fixed;inset:0;z-index:60;background:rgba(10,14,20,.5);display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto}
 .modal .box{background:var(--surface);border-radius:14px;box-shadow:var(--shadow);width:min(760px,100%);display:flex;flex-direction:column}
 .modal .box.sm{width:min(460px,100%)}
+.modal .box.lg{width:min(1180px,100%)}
+.hdpick{margin-bottom:16px;gap:8px}
+.hdpick select{font-weight:600}
+.btns-imp{display:flex;gap:8px;flex-wrap:wrap}
+.imp-sum{display:flex;gap:16px;flex-wrap:wrap;font-size:14px}
+.imp-tbl{max-height:52vh;overflow:auto}
+.imp-tbl td{vertical-align:top}
+.imp-tbl .msg{font-size:12.5px;line-height:1.45}
+.imp-tbl tr.bad td{background:var(--crit-bg,#fdecec)}
+.imp-tbl tr.warnr td{background:var(--warn-bg,#fff6e0)}
 .modal .mh{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:16px 20px;border-bottom:1px solid var(--line)}
 .modal .mb{padding:16px 20px;display:flex;flex-direction:column;gap:14px}
 .modal .mf{padding:12px 20px 16px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;border-top:1px solid var(--line)}

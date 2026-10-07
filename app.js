@@ -10,7 +10,8 @@ const LOAI = {
 const LOAI_CT = { LHSK: ['LHSK', 'BTS 4G', 'Khác'], NHA_TRAM: ['Nhà trạm', 'Khác'], TRUYEN_DAN: ['Truyền dẫn', 'Khác'], GPON: ['GPON', 'Khác'] };
 const TIEN_DO = ['Chưa nghiệm thu', 'Đã nghiệm thu', 'Đã quyết toán', 'Hủy'];
 const TT = { cho_duyet: ['k-warn', 'Chờ duyệt'], da_duyet: ['k-ok', 'Đã duyệt'], tu_choi: ['k-crit', 'Bị từ chối'] };
-const DOI_TAC_GOI_Y = ['Liên danh VCC - ACT', 'Tổng Công ty CP Công trình Viettel (VCC)', 'Công ty CP Viễn thông ACT'];
+const dsDoiTac = h => (h && Array.isArray(h.ds_doi_tac) && h.ds_doi_tac.length) ? h.ds_doi_tac : (h && h.doi_tac ? [h.doi_tac] : []);
+const nhanHd = h => `HĐ ${LOAI[h.loai].ngan} ${h.nam} – ${h.so_hd}`;
 
 /* ---------- Icon ---------- */
 const P = {
@@ -41,7 +42,8 @@ const P = {
   wallet: 'M3 7h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 7l12-4v4M17 14h.01',
   inbox: 'M22 12h-6l-2 3h-4l-2-3H2M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z',
   receipt: 'M6 2h12v20l-3-2-3 2-3-2-3 2zM9 7h6M9 11h6M9 15h4',
-  paste: 'M9 4h6v3H9zM8 5H6a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-2'
+  paste: 'M9 4h6v3H9zM8 5H6a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-2',
+  upload: 'M12 21V9M7 14l5-5 5 5M5 3h14'
 };
 const ic = (n, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true"><path d="${P[n] || ''}"/></svg>`;
 
@@ -365,21 +367,28 @@ function vDuyet() {
 /* ---------- Đăng ký / nhập PO ---------- */
 function blankForm() { return { tinh: isQT() ? (S.f.tinh || '') : S.user.tinh_ma, so_po: '', ngay_ky: '', loai_ct: (LOAI_CT[S.loai] || ['Khác'])[0], doi_tac: '', noi_dung: '', gt: '', vatp: '8', vat: '', sl: '', nguoi: '' }; }
 function vDangKy() {
-  const hd = curHd();
-  if (hd.trang_thai !== 'dang_thuc_hien') return `<div class="card empty">HĐ khung đã kết thúc, không nhận P/O mới.</div>`;
+  const hd = curHd(), dangTH = S.hds.filter(h => h.trang_thai === 'dang_thuc_hien');
+  const chonHd = `<div class="card stack hdpick"><div class="row" style="align-items:end">
+      <div class="fg" style="flex:2"><label for="d_hd">Bước 1 – Chọn hợp đồng khung (VTNet đã ký)</label>
+        <select id="d_hd" data-f="hdDk">${dangTH.length ? '' : '<option value="">Không có HĐ khung đang thực hiện</option>'}${dangTH.map(h => `<option value="${h.id}" ${h.id === S.hdId ? 'selected' : ''}>${esc(nhanHd(h))}</option>`).join('')}</select></div>
+      <div class="fg" style="flex:1"><label>&nbsp;</label><div class="btns-imp">
+        <button type="button" class="btn" data-act="mauExcel" ${hd && hd.trang_thai === 'dang_thuc_hien' ? '' : 'disabled'}>${ic('download')}Tải file mẫu Excel</button>
+        <button type="button" class="btn primary" data-act="nhapExcel" ${hd && hd.trang_thai === 'dang_thuc_hien' ? '' : 'disabled'}>${ic('upload')}Nhập nhiều PO từ Excel</button>
+        <input type="file" id="f_excel" accept=".xlsx" hidden></div></div></div>
+    ${hd ? `<div class="small muted">Đối tác: <b>${esc(dsDoiTac(hd).join('; ') || '—')}</b> · Hiệu lực: <b>${dmy(hd.ngay_ky) || '—'}</b> – <b>${dmy(hd.ngay_het_han) || 'chưa nhập'}</b> · Hạn mức: <b>${hd.pb ? esc(hd.pb.ten) : 'chưa ban hành'}</b></div>` : ''}</div>`;
+  if (!hd || hd.trang_thai !== 'dang_thuc_hien') return chonHd + `<div class="card empty">HĐ khung đang chọn đã kết thúc, không nhận P/O mới. Chọn HĐ khung đang thực hiện ở trên.</div>`;
   if (!S.form) S.form = blankForm();
-  const f = S.form;
-  const goiY = [...new Set([hd.doi_tac, ...DOI_TAC_GOI_Y].filter(Boolean))];
-  return `<div class="form-grid">
+  const f = S.form, dts = dsDoiTac(hd);
+  return chonHd + `<div class="form-grid">
   <form class="card stack" id="poForm" novalidate>
-    <h2>${isQT() ? 'Nhập PO (P.QLHT nhập trực tiếp, ghi nhận ngay)' : 'Đăng ký PO đã ký với đối tác'}</h2>
+    <h2>${isQT() ? 'Bước 2 – Nhập PO (P.QLHT nhập trực tiếp, ghi nhận ngay)' : 'Bước 2 – Đăng ký PO đã ký với đối tác'}</h2>
     <div class="row">
       ${isQT() ? `<div class="fg"><label for="d_tinh">Viettel tỉnh/TP</label><select id="d_tinh" name="tinh" required><option value="">– Chọn tỉnh –</option>${S.th.map(x => `<option value="${x.tinh_ma}" ${f.tinh === x.tinh_ma ? 'selected' : ''}>${x.tinh_ma} – ${esc(x.ten)}</option>`).join('')}</select></div>` : ''}
       <div class="fg"><label for="d_ngay">Ngày ký P/O</label><input type="date" id="d_ngay" name="ngay_ky" value="${esc(f.ngay_ky)}" min="${hd.ngay_ky || ''}" max="${today()}" required></div>
       <div class="fg"><label for="d_lct">Loại công trình</label><select id="d_lct" name="loai_ct">${(LOAI_CT[S.loai] || ['Khác']).map(t => `<option ${f.loai_ct === t ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
     </div>
     <div class="fg"><label for="d_so">Số P/O</label><input type="text" id="d_so" name="so_po" value="${esc(f.so_po)}" autocomplete="off" required placeholder="VD: 071001-${esc(hd.so_hd.split('-')[0])}/Viettel ${esc(isQT() ? 'XXX' : S.user.tinh_ma)}-VCC/PTV${hd.nam}"></div>
-    <div class="fg"><label for="d_dt">Đối tác</label><input type="text" id="d_dt" name="doi_tac" list="dlDt" value="${esc(f.doi_tac)}" placeholder="Chọn hoặc gõ tên đối tác"><datalist id="dlDt">${goiY.map(d => `<option value="${esc(d)}">`).join('')}</datalist></div>
+    <div class="fg"><label for="d_dt">Đối tác (thuộc HĐ khung)</label><select id="d_dt" name="doi_tac" required><option value="">– Chọn đối tác –</option>${dts.map(d => `<option ${f.doi_tac === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select></div>
     <div class="fg"><label for="d_nd">Nội dung P/O</label><textarea id="d_nd" name="noi_dung" rows="3" placeholder="Bổ sung tài nguyên phục vụ… theo Kế hoạch số …">${esc(f.noi_dung)}</textarea></div>
     <div class="row">
       <div class="fg"><label for="d_gt">Giá trị chưa VAT (đ)</label><input type="text" inputmode="numeric" id="d_gt" name="gt" value="${f.gt ? fmt(digits(f.gt)) : ''}" placeholder="0"></div>
@@ -410,7 +419,7 @@ function kiemTraForm() {
   const dup = so && S.po.some(p => p.tinh_ma === f.tinh && p.trang_thai !== 'tu_choi' && p.so_po.trim().toLowerCase() === so);
   const it = [];
   const add = (l, t) => it.push([l, t]);
-  const thieu = [isQT() && !f.tinh && 'tỉnh', !f.so_po.trim() && 'số P/O', !f.ngay_ky && 'ngày ký', !f.noi_dung.trim() && 'nội dung', !gt && 'giá trị'].filter(Boolean);
+  const thieu = [isQT() && !f.tinh && 'tỉnh', !f.so_po.trim() && 'số P/O', !f.ngay_ky && 'ngày ký', !f.doi_tac && 'đối tác', !f.noi_dung.trim() && 'nội dung', !gt && 'giá trị'].filter(Boolean);
   add(thieu.length ? 'err' : 'ok', thieu.length ? 'Còn thiếu: ' + thieu.join(', ') : 'Đủ thông tin bắt buộc');
   if (so) add(dup ? 'err' : 'ok', dup ? 'Số P/O này đã có trên hệ thống' : 'Số P/O chưa từng đăng ký');
   if (f.ngay_ky) { const ok = (!hd.ngay_ky || f.ngay_ky >= hd.ngay_ky) && (!hd.ngay_het_han || f.ngay_ky <= hd.ngay_het_han) && f.ngay_ky <= today(); add(ok ? 'ok' : 'err', ok ? 'Ngày ký nằm trong hiệu lực HĐ khung' : 'Ngày ký ngoài hiệu lực HĐ khung hoặc sau hôm nay'); }
@@ -437,7 +446,174 @@ async function guiForm() {
   S.form = null; S.tab = 'po'; await lamMoi();
 }
 
+/* ---------- Nhập nhiều PO từ Excel ---------- */
+const COT_EXCEL = [
+  ['tinh', 'Mã tỉnh *', 10], ['so_po', 'Số P/O *', 40], ['ngay_ky', 'Ngày ký P/O *\n(dd/mm/yyyy)', 14], ['loai_ct', 'Loại công trình', 14],
+  ['doi_tac', 'Đối tác *', 38], ['noi_dung', 'Nội dung P/O *', 52], ['gt', 'Giá trị chưa VAT (đ) *', 18], ['vatp', 'Thuế suất VAT (%)', 11],
+  ['vat', 'Tiền thuế VAT (đ)\n(để trống: tự tính)', 18], ['sl', 'Số lượng trạm/tuyến', 12], ['nguoi', 'Người nhập (họ tên, SĐT)', 26]];
+const boDau = t => String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase().replace(/\s+/g, ' ').trim();
+const KHOA_COT = [['ma tinh', 'tinh'], ['so p/o', 'so_po'], ['so po', 'so_po'], ['ngay ky', 'ngay_ky'], ['loai cong trinh', 'loai_ct'], ['doi tac', 'doi_tac'], ['noi dung', 'noi_dung'],
+  ['gia tri chua vat', 'gt'], ['thue suat', 'vatp'], ['tien thue', 'vat'], ['so luong', 'sl'], ['nguoi nhap', 'nguoi']];
+const tenFileNgay = () => { const d = new Date(); return String(d.getDate()).padStart(2, '0') + '.' + String(d.getMonth() + 1).padStart(2, '0') + '.' + d.getFullYear(); };
+function taiFile(buf, name) {
+  const url = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+async function taiMauExcel() {
+  if (!window.ExcelJS) throw new Error('Chưa tải được thư viện Excel, kiểm tra kết nối mạng');
+  const hd = curHd(), qt = isQT(), cols = COT_EXCEL.filter(c => qt || c[0] !== 'tinh'), N = 300;
+  const wb = new ExcelJS.Workbook(); wb.creator = 'PO Manager – P.QLHT';
+  const ws = wb.addWorksheet('Dang_ky_PO', { views: [{ state: 'frozen', ySplit: 4 }] });
+  const F = { name: 'Times New Roman', size: 12 }, bd = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+  ws.columns = [{ width: 6 }, ...cols.map(c => ({ width: c[2] }))];
+  const L = ws.columnCount, last = String.fromCharCode(64 + L);
+  ws.mergeCells(`A1:${last}1`); ws.getCell('A1').value = `MẪU ĐĂNG KÝ PO – HĐ KHUNG ${LOAI[hd.loai].ten.toUpperCase()} NĂM ${hd.nam}${qt ? '' : ' – VIETTEL ' + S.user.tinh_ten.toUpperCase()}`;
+  ws.getCell('A1').font = { ...F, size: 14, bold: true }; ws.getCell('A1').alignment = { horizontal: 'center' };
+  ws.mergeCells(`A2:${last}2`); ws.getCell('A2').value = 'Số HĐ khung: ' + hd.so_hd; ws.getCell('A2').font = { ...F, bold: true, color: { argb: 'FFC00000' } }; ws.getCell('A2').alignment = { horizontal: 'center' };
+  ws.mergeCells(`A3:${last}3`); ws.getCell('A3').value = 'Cột có dấu * bắt buộc. Ngày ký dạng dd/mm/yyyy. Giá trị nhập số (đồng). Đối tác, loại công trình chọn trong danh sách. Không sửa dòng 1–4.';
+  ws.getCell('A3').font = { ...F, italic: true, size: 11 }; ws.getCell('A3').alignment = { horizontal: 'center', wrapText: true }; ws.getRow(3).height = 30;
+  const hr = ws.getRow(4); ['STT', ...cols.map(c => c[1])].forEach((t, i) => { const c = hr.getCell(i + 1); c.value = t; c.font = { ...F, bold: true, color: { argb: 'FFFFFFFF' } }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC8102E' } }; c.border = bd; c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }; });
+  hr.height = 42;
+  const dm = wb.addWorksheet('DM', { state: 'hidden' });
+  const dts = dsDoiTac(hd), lcts = LOAI_CT[hd.loai] || ['Khác'], tinhs = S.th.map(x => x.tinh_ma);
+  dm.getColumn(1).values = ['Đối tác', ...dts]; dm.getColumn(2).values = ['Loại CT', ...lcts]; dm.getColumn(3).values = ['Mã tỉnh', ...tinhs];
+  const colOf = k => 2 + cols.findIndex(c => c[0] === k);
+  for (let r = 5; r < 5 + N; r++) {
+    const row = ws.getRow(r);
+    row.getCell(1).value = { formula: `IF(${String.fromCharCode(64 + colOf('so_po'))}${r}="","",ROW()-4)` };
+    for (let j = 1; j <= L; j++) { const c = row.getCell(j); c.border = bd; c.font = F; c.alignment = { vertical: 'top', wrapText: j === colOf('noi_dung') }; }
+    row.getCell(colOf('ngay_ky')).numFmt = 'dd/mm/yyyy';
+    ['gt', 'vat'].forEach(k => row.getCell(colOf(k)).numFmt = '#,##0');
+    const dv = (k, f) => { row.getCell(colOf(k)).dataValidation = { type: 'list', allowBlank: true, showErrorMessage: true, errorTitle: 'Giá trị không hợp lệ', error: 'Chọn trong danh sách', formulae: [f] }; };
+    dv('doi_tac', `DM!$A$2:$A$${1 + dts.length}`); dv('loai_ct', `DM!$B$2:$B$${1 + lcts.length}`); dv('vatp', '"8,10,0"');
+    if (qt) dv('tinh', `DM!$C$2:$C$${1 + tinhs.length}`);
+    row.getCell(colOf('ngay_ky')).dataValidation = { type: 'date', operator: 'between', allowBlank: true, showErrorMessage: true, error: 'Nhập ngày dạng dd/mm/yyyy, trong thời gian hiệu lực HĐ khung',
+      formulae: [new Date((hd.ngay_ky || '2020-01-01') + 'T00:00:00Z'), new Date((hd.ngay_het_han || (hd.nam + 1) + '-12-31') + 'T00:00:00Z')] };
+  }
+  const hdn = wb.addWorksheet('Huong_dan'); hdn.columns = [{ width: 110 }];
+  ['HƯỚNG DẪN ĐĂNG KÝ NHIỀU PO BẰNG FILE EXCEL', '',
+   '1. Mỗi dòng ở sheet Dang_ky_PO là 1 PO đã ký với đối tác. Nhập từ dòng 5; tối đa ' + N + ' dòng/lần.',
+   '2. Số P/O: ghi đúng số trên PO đã ký. Ngày ký: dd/mm/yyyy, trong thời gian hiệu lực HĐ khung và không sau ngày nhập.',
+   '3. Đối tác: chọn trong danh sách (' + dts.join('; ') + ').',
+   '4. Giá trị chưa VAT: số đồng, không nhập chữ. Thuế suất mặc định 8%; Tiền thuế VAT để trống thì phần mềm tự tính = Giá trị chưa VAT × thuế suất.',
+   qt ? '5. Mã tỉnh: chọn mã Viettel tỉnh/TP (HNI, HCM…).' : '5. File chỉ dùng cho đơn vị đã tải mẫu; không đăng ký PO của đơn vị khác.',
+   '6. Trên phần mềm: mục ' + (qt ? '"Nhập PO"' : '"Đăng ký PO"') + ' → chọn đúng HĐ khung → "Nhập nhiều PO từ Excel" → chọn file → xem kết quả kiểm tra → bấm gửi. Dòng lỗi không được gửi, sửa trong file rồi nhập lại.',
+   '7. Không đổi tên sheet, không thêm/xóa cột, không sửa dòng tiêu đề.']
+    .forEach((t, i) => { const c = hdn.getCell(i + 1, 1); c.value = t; c.font = { ...F, bold: i === 0, size: i === 0 ? 14 : 12 }; c.alignment = { wrapText: true }; });
+  wb.views = [{ activeTab: 0 }];
+  taiFile(await wb.xlsx.writeBuffer(), `Mẫu đăng ký PO – HĐ ${LOAI[hd.loai].ngan} ${hd.nam}${qt ? '' : ' – ' + S.user.tinh_ma}.xlsx`);
+  toast('Đã tải file mẫu');
+}
+function giaTriO(v) {
+  if (v == null) return '';
+  if (v instanceof Date) return v;
+  if (typeof v === 'object') { if (v.richText) return v.richText.map(t => t.text).join(''); if ('result' in v) return giaTriO(v.result); if (v.text != null) return giaTriO(v.text); if (v.error) return ''; }
+  return v;
+}
+function ngayExcel(v) {
+  const p2 = n => String(n).padStart(2, '0');
+  if (v instanceof Date && !isNaN(v)) return `${v.getUTCFullYear()}-${p2(v.getUTCMonth() + 1)}-${p2(v.getUTCDate())}`;
+  if (typeof v === 'number' && v > 20000 && v < 80000) { const d = new Date(Math.round((v - 25569) * 86400000)); return `${d.getUTCFullYear()}-${p2(d.getUTCMonth() + 1)}-${p2(d.getUTCDate())}`; }
+  const t = String(v).trim(); let m;
+  if ((m = t.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/))) { const d = new Date(Date.UTC(+m[3], +m[2] - 1, +m[1])); if (d.getUTCDate() === +m[1] && d.getUTCMonth() === +m[2] - 1) return `${m[3]}-${p2(m[2])}-${p2(m[1])}`; }
+  if ((m = t.match(/^(\d{4})-(\d{2})-(\d{2})/))) return `${m[1]}-${m[2]}-${m[3]}`;
+  return null;
+}
+const soExcel = v => typeof v === 'number' ? Math.round(v) : digits(v);
+async function docExcelPo(file) {
+  if (!window.ExcelJS) throw new Error('Chưa tải được thư viện Excel, kiểm tra kết nối mạng');
+  const hd = curHd(), qt = isQT();
+  const wb = new ExcelJS.Workbook();
+  try { await wb.xlsx.load(await file.arrayBuffer()); } catch (e) { throw new Error('Không đọc được file. Dùng file .xlsx theo mẫu tải từ phần mềm.'); }
+  const ws = wb.getWorksheet('Dang_ky_PO') || wb.worksheets[0];
+  let hRow = 0; const map = {};
+  for (let r = 1; r <= 12 && !hRow; r++) {
+    const row = ws.getRow(r); const tmp = {};
+    row.eachCell((c, j) => { const t = boDau(giaTriO(c.value)); const k = KHOA_COT.find(([p]) => t.startsWith(p)); if (k && !tmp[k[1]]) tmp[k[1]] = j; });
+    if (tmp.so_po && tmp.gt) { hRow = r; Object.assign(map, tmp); }
+  }
+  if (!hRow) throw new Error('Không tìm thấy dòng tiêu đề (Số P/O, Giá trị chưa VAT…). Dùng đúng file mẫu.');
+  const nhan = String(giaTriO(ws.getCell('A2').value) || '');
+  if (/so hd khung/.test(boDau(nhan)) && !nhan.includes(hd.so_hd)) throw new Error(`File mẫu thuộc HĐ khác (${nhan.replace(/^.*?:\s*/, '')}). Chọn đúng HĐ khung ở Bước 1 hoặc tải lại file mẫu.`);
+  if (qt && !map.tinh) throw new Error('File thiếu cột "Mã tỉnh". Quản trị dùng file mẫu tải từ tài khoản PQLHT.');
+  const dts = dsDoiTac(hd), dtKey = Object.fromEntries(dts.map(d => [boDau(d), d])), lcts = LOAI_CT[hd.loai] || ['Khác'];
+  const R = rows(), dung = {}, trongFile = new Set(), out = [];
+  for (let r = hRow + 1; r <= ws.rowCount; r++) {
+    const row = ws.getRow(r), g = k => map[k] ? giaTriO(row.getCell(map[k]).value) : '';
+    const raw = { tinh: g('tinh'), so_po: String(g('so_po')).trim(), ngay: g('ngay_ky'), loai_ct: String(g('loai_ct')).trim(), doi_tac: String(g('doi_tac')).trim(),
+      noi_dung: String(g('noi_dung')).trim(), gt: g('gt'), vatp: g('vatp'), vat: g('vat'), sl: g('sl'), nguoi: String(g('nguoi')).trim() };
+    if (!raw.so_po && !raw.noi_dung && !raw.gt && !raw.doi_tac && !raw.ngay) continue;
+    if (out.length >= 300) throw new Error('File có quá 300 PO. Chia thành nhiều file.');
+    const loi = [], canh = [];
+    const tinh = qt ? String(raw.tinh).trim().toUpperCase() : S.user.tinh_ma;
+    if (qt && !tinh) loi.push('thiếu mã tỉnh'); else if (qt && !S.th.some(x => x.tinh_ma === tinh)) loi.push(`mã tỉnh "${tinh}" không đúng`);
+    if (!qt && raw.tinh && String(raw.tinh).trim().toUpperCase() !== tinh) loi.push('mã tỉnh khác đơn vị');
+    if (!raw.so_po) loi.push('thiếu số P/O');
+    const ngay = raw.ngay === '' ? null : ngayExcel(raw.ngay);
+    if (raw.ngay === '') loi.push('thiếu ngày ký'); else if (!ngay) loi.push('ngày ký sai định dạng dd/mm/yyyy');
+    else if ((hd.ngay_ky && ngay < hd.ngay_ky) || (hd.ngay_het_han && ngay > hd.ngay_het_han) || ngay > today()) loi.push('ngày ký ngoài hiệu lực HĐ hoặc sau hôm nay');
+    const dt = dtKey[boDau(raw.doi_tac)];
+    if (!raw.doi_tac) loi.push('thiếu đối tác'); else if (!dt) loi.push(`đối tác "${raw.doi_tac}" không thuộc HĐ khung`);
+    if (!raw.noi_dung) loi.push('thiếu nội dung');
+    const gt = soExcel(raw.gt); if (!gt) loi.push('thiếu/sai giá trị chưa VAT');
+    let vp = raw.vatp === '' ? 8 : (typeof raw.vatp === 'number' ? (raw.vatp > 0 && raw.vatp < 1 ? raw.vatp * 100 : raw.vatp) : Number(String(raw.vatp).replace('%', '').replace(',', '.')));
+    if (!isFinite(vp)) { loi.push('thuế suất VAT không đúng'); vp = 8; }
+    const vat = raw.vat === '' ? Math.round(gt * vp / 100) : soExcel(raw.vat);
+    if (![8, 10, 0].includes(Math.round(vp * 100) / 100)) canh.push(`VAT ${vp}%`);
+    if (raw.vat !== '' && gt && Math.abs(vat - Math.round(gt * vp / 100)) > 1000) canh.push('tiền thuế lệch với thuế suất');
+    const loai_ct = raw.loai_ct ? (lcts.find(t => boDau(t) === boDau(raw.loai_ct)) || raw.loai_ct) : lcts[0];
+    const khoa = tinh + '|' + raw.so_po.toLowerCase();
+    if (raw.so_po && S.po.some(p => p.tinh_ma === tinh && p.trang_thai !== 'tu_choi' && p.so_po.trim().toLowerCase() === raw.so_po.toLowerCase())) loi.push('số P/O đã có trên hệ thống');
+    else if (raw.so_po && trongFile.has(khoa)) loi.push('số P/O trùng trong file');
+    trongFile.add(khoa);
+    const tong = gt + vat, x = R.find(y => y.ma === tinh);
+    if (!loi.length && x) { dung[tinh] = (dung[tinh] || 0) + tong; if (x.dk + x.cd + dung[tinh] > x.hm) canh.push('vượt hạn mức (P.QLHT xem xét khi duyệt)'); }
+    out.push({ dong: r, tinh, loi, canh, tong, p: { tinh_ma: tinh, so_po: raw.so_po, ngay_ky: ngay, loai_ct, doi_tac: dt || raw.doi_tac, noi_dung: raw.noi_dung,
+      gt_truoc_vat: gt, vat, so_luong: raw.sl === '' ? '' : String(soExcel(raw.sl)), nguoi_tao: raw.nguoi, nguon: 'excel' } });
+  }
+  if (!out.length) throw new Error('File chưa có dòng PO nào (nhập từ dòng 5).');
+  S.imp = { hd: S.hdId, ds: out, ten: file.name };
+  veNhapExcel();
+}
+function veNhapExcel(kq) {
+  const I = S.imp, ok = I.ds.filter(x => !x.loi.length), bad = I.ds.length - ok.length, qt = isQT();
+  const tongOk = ok.reduce((a, x) => a + x.tong, 0);
+  openModal(`<div class="mh"><div><h2>Nhập PO từ Excel</h2><div class="small muted">${esc(I.ten)} · ${esc(nhanHd(curHd()))}</div></div>${kq && kq.dang ? '' : `<button class="iconbtn" data-act="closeModal" aria-label="Đóng">${ic('x')}</button>`}</div>
+  <div class="mb">
+    <div class="imp-sum"><span>Tổng: <b>${I.ds.length}</b> dòng</span><span class="pill k-ok">Hợp lệ: ${ok.length}</span>${bad ? `<span class="pill k-crit">Lỗi: ${bad} (không gửi)</span>` : ''}<span>Giá trị hợp lệ gồm VAT: <b>${fmt(tongOk)} đ</b></span></div>
+    ${kq ? `<div class="note ${kq.loi.length ? 'k-warn' : 'k-ok'}">${kq.dang ? `Đang gửi ${kq.xong}/${kq.tong} PO…` : `Đã ${qt ? 'ghi nhận' : 'gửi đăng ký'} <b>${kq.thanh}</b>/${kq.tong} PO${qt ? '' : ', chờ P.QLHT duyệt'}.`}
+      ${kq.loi.length ? '<br>' + kq.loi.map(l => `Dòng ${l.dong} (${esc(l.so)}): ${esc(l.msg)}`).join('<br>') : ''}</div>` : ''}
+    <div class="tbl imp-tbl"><table><thead><tr><th>Dòng</th>${qt ? '<th>Tỉnh</th>' : ''}<th>Số P/O</th><th>Ngày ký</th><th>Đối tác</th><th>Nội dung</th><th class="num">Gồm VAT (đ)</th><th>Kiểm tra</th></tr></thead>
+    <tbody>${I.ds.map(x => `<tr class="${x.loi.length ? 'bad' : x.canh.length ? 'warnr' : ''}"><td>${x.dong}</td>${qt ? `<td>${esc(x.tinh)}</td>` : ''}<td class="mono" style="font-size:12.5px">${esc(x.p.so_po)}</td><td>${dmy(x.p.ngay_ky)}</td>
+      <td>${esc(x.p.doi_tac)}</td><td><div class="nd">${esc(x.p.noi_dung)}</div></td><td class="num">${fmt(x.tong)}</td>
+      <td class="msg">${x.loi.length ? '<b style="color:var(--crit)">Lỗi:</b> ' + esc(x.loi.join('; ')) : '<span style="color:var(--ok)">✓ Hợp lệ</span>'}${x.canh.length ? '<br><span style="color:var(--warn)">Lưu ý: ' + esc(x.canh.join('; ')) + '</span>' : ''}</td></tr>`).join('')}</tbody></table></div>
+  </div>
+  <div class="mf">${kq && !kq.dang ? `<button class="btn primary" data-act="closeModal">Đóng</button>` : `<button class="btn" data-act="closeModal" ${kq ? 'disabled' : ''}>Hủy</button>
+    <button class="btn primary" data-act="guiExcel" ${ok.length && !kq ? '' : 'disabled'}>${ic('check')}${qt ? 'Ghi nhận' : 'Gửi đăng ký'} ${ok.length} PO hợp lệ</button>`}</div>`, 'lg');
+}
+async function guiExcelPo() {
+  const I = S.imp; if (!I || I.hd !== S.hdId) return;
+  const ds = I.ds.filter(x => !x.loi.length), kq = { tong: ds.length, xong: 0, thanh: 0, loi: [], dang: true };
+  veNhapExcel(kq);
+  for (const x of ds) {
+    try { await rpc('dang_ky_po', { p_hd: I.hd, p: x.p }); kq.thanh++; x.loi = []; x.canh = [...x.canh.filter(c => !/^Đã gửi/.test(c))]; }
+    catch (e) { kq.loi.push({ dong: x.dong, so: x.p.so_po, msg: e.message }); }
+    kq.xong++; if (kq.xong % 5 === 0 || kq.xong === kq.tong) veNhapExcel(kq);
+  }
+  kq.dang = false; veNhapExcel(kq);
+  toast(`Đã ${isQT() ? 'ghi nhận' : 'gửi'} ${kq.thanh}/${kq.tong} PO`, !!kq.loi.length);
+  S.imp = null; S.form = null;
+  try { await lamMoi(); } catch (e) {}
+  if (!kq.loi.length) S.tab = 'po';
+  const html = $('#modal').innerHTML; render(); $('#modal').innerHTML = html;
+}
+
 /* ---------- Chi tiết / sửa PO ---------- */
+function dtOpts(cur) {
+  const L = dsDoiTac(curHd()), cu = (cur || '').trim();
+  return (cu && !L.includes(cu) ? `<option value="${esc(cu)}" selected>${esc(cu)} (tên cũ – nên chọn lại)</option>` : (cu ? '' : '<option value="">– Chọn đối tác –</option>'))
+    + L.map(d => `<option ${d === cu ? 'selected' : ''}>${esc(d)}</option>`).join('');
+}
 async function xemPo(id) {
   const p = S.po.find(x => x.id === Number(id)); if (!p) return;
   const qt = isQT(), sua = qt || true, tinh = S.th.find(x => x.tinh_ma === p.tinh_ma);
@@ -451,7 +627,7 @@ async function xemPo(id) {
         <div class="fg"><label for="e_ngay">Ngày ký</label><input type="date" id="e_ngay" value="${esc(p.ngay_ky || '')}" max="${today()}"></div>
         <div class="fg"><label for="e_lct">Loại công trình</label><input type="text" id="e_lct" value="${esc(p.loai_ct || '')}" list="dlLct"><datalist id="dlLct">${(LOAI_CT[S.loai] || []).map(t => `<option value="${t}">`).join('')}</datalist></div>
       </div>
-      <div class="fg"><label for="e_dt">Đối tác</label><input type="text" id="e_dt" value="${esc(p.doi_tac || '')}"></div>
+      <div class="fg"><label for="e_dt">Đối tác</label><select id="e_dt">${dtOpts(p.doi_tac)}</select></div>
       <div class="fg"><label for="e_nd">Nội dung</label><textarea id="e_nd" rows="3">${esc(p.noi_dung || '')}</textarea></div>
       <div class="row">
         <div class="fg"><label for="e_gt">Giá trị chưa VAT (đ)</label><input type="text" inputmode="numeric" id="e_gt" value="${fmt(p.gt_truoc_vat)}"></div>
@@ -563,7 +739,8 @@ function hdForm(h) {
     </div>
     <div class="fg"><label for="h_so">Số HĐ / Thỏa thuận khung</label><input type="text" id="h_so" value="${esc(h.so_hd)}"></div>
     <div class="fg"><label for="h_ten">Tên HĐ</label><input type="text" id="h_ten" value="${esc(h.ten)}"></div>
-    <div class="fg"><label for="h_dt">Đối tác</label><input type="text" id="h_dt" value="${esc(h.doi_tac || '')}"></div>
+    <div class="fg"><label for="h_dt">Đối tác (tên chung, VD: Liên danh VCC-ACT)</label><input type="text" id="h_dt" value="${esc(h.doi_tac || '')}"></div>
+    <div class="fg"><label for="h_dsdt">Danh sách đối tác được ký PO (mỗi dòng một đối tác)</label><textarea id="h_dsdt" rows="3" placeholder="Tổng Công ty Cổ phần Công trình Viettel&#10;Công ty Cổ phần Viễn thông ACT">${esc((h.ds_doi_tac || []).join('\n'))}</textarea><span class="hint">Tỉnh chỉ chọn được đối tác trong danh sách này khi đăng ký PO.</span></div>
     <div class="row">
       <div class="fg"><label for="h_nk">Ngày ký</label><input type="date" id="h_nk" value="${esc(h.ngay_ky || '')}"></div>
       <div class="fg"><label for="h_hh">Ngày hết hiệu lực</label><input type="date" id="h_hh" value="${esc(h.ngay_het_han || '')}"></div>
@@ -742,7 +919,7 @@ async function xuatTaiKhoan() {
 }
 
 /* ---------- Modal ---------- */
-function openModal(html, small) { $('#modal').innerHTML = `<div class="modal" data-act="bgModal"><div class="box ${small ? 'sm' : ''}" role="dialog" aria-modal="true">${html}</div></div>`; const f = $('#modal input:not([readonly]),#modal textarea'); if (f) setTimeout(() => f.focus(), 30); }
+function openModal(html, small) { $('#modal').innerHTML = `<div class="modal" data-act="bgModal"><div class="box ${small === 'lg' ? 'lg' : small ? 'sm' : ''}" role="dialog" aria-modal="true">${html}</div></div>`; const f = $('#modal input:not([readonly]),#modal textarea'); if (f) setTimeout(() => f.focus(), 30); }
 function closeModal() { if (S.batBuocDoiMk && S.user && S.user.phai_doi_mk) return; $('#modal').innerHTML = ''; }
 function xacNhan(tieuDe, noiDung, nut, fn, nguyHiem) {
   openModal(`<div class="mh"><h2>${tieuDe}</h2></div><div class="mb"><div>${noiDung}</div></div><div class="mf"><button class="btn" data-act="closeModal">Hủy</button><button class="btn ${nguyHiem ? 'danger' : 'primary'}" id="xnOk">${nut}</button></div>`, true);
@@ -780,6 +957,9 @@ const ACT = {
   bgModal: (d, el, e) => { if (e.target === el) closeModal(); },
   excel: () => chay(xuatExcel),
   xoaForm: () => { S.form = blankForm(); render(); },
+  mauExcel: () => chay(taiMauExcel),
+  nhapExcel: () => { if (!window.ExcelJS) return toast('Chưa tải được thư viện Excel, kiểm tra kết nối mạng', true); $('#f_excel').click(); },
+  guiExcel: () => guiExcelPo(),
   luuPo: async d => {
     await chay(() => rpc('cap_nhat_po', { p_id: Number(d.v), p: docSuaPo() }), 'Đã lưu thay đổi');
     closeModal(); await lamMoi();
@@ -848,7 +1028,7 @@ const ACT = {
   hdSua: d => hdForm(S.hds.find(h => h.id === Number(d.v))),
   hdLuu: async d => {
     const p = { id: d.v || '', loai: $('#h_loai').value, nam: $('#h_nam').value, so_hd: $('#h_so').value, ten: $('#h_ten').value, doi_tac: $('#h_dt').value, ngay_ky: $('#h_nk').value, ngay_het_han: $('#h_hh').value,
-      gia_tri: digits($('#h_gt').value), ty_le_han_muc: (Number($('#h_tl').value) || 95) / 100, tu_dong_duyet: $('#h_auto').checked, trang_thai: $('#h_tt').value, ghi_chu: $('#h_gc').value };
+      gia_tri: digits($('#h_gt').value), ty_le_han_muc: (Number($('#h_tl').value) || 95) / 100, tu_dong_duyet: $('#h_auto').checked, trang_thai: $('#h_tt').value, ghi_chu: $('#h_gc').value, ds_doi_tac: $('#h_dsdt').value.split(/\r?\n/).map(x => x.trim()).filter(Boolean) };
     const id = await chay(() => rpc('luu_hd', { p }), 'Đã lưu HĐ khung');
     closeModal(); S.hds = await rpc('ds_hd'); S.loai = p.loai; S.nam = Number(p.nam); S.hdId = id; ls.set('po_loai', p.loai); await taiHd();
   },
@@ -885,6 +1065,14 @@ document.addEventListener('change', async e => {
   const t = e.target, k = t.dataset.f;
   if (k === 'nam') { S.nam = Number(t.value); chonLoai(S.loai, true); await taiHd(); }
   else if (k === 'hd') { S.hdId = Number(t.value); await taiHd(); }
+  else if (k === 'hdDk') {
+    const h = S.hds.find(x => x.id === Number(t.value)); if (!h) return;
+    const giu = S.form; S.loai = h.loai; S.nam = h.nam; S.hdId = h.id; ls.set('po_loai', h.loai);
+    await taiHd(); S.tab = 'dangky';
+    if (giu) S.form = { ...giu, doi_tac: '', loai_ct: (LOAI_CT[h.loai] || ['Khác'])[0] };
+    render();
+  }
+  else if (t.id === 'f_excel' && t.files && t.files[0]) { const fl = t.files[0]; t.value = ''; await chay(() => docExcelPo(fl)); }
   else if (k === 'kv' || k === 'sort') { S[k] = t.value; render(); }
   else if (['tinh', 'tt', 'td', 'lct'].includes(k)) { S.f[k] = t.value; S.lim = 80; render(); }
   else if (t.dataset.sel) { const id = Number(t.dataset.sel); t.checked ? S.sel.add(id) : S.sel.delete(id); render(); }

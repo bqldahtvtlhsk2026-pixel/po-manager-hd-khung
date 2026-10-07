@@ -131,7 +131,7 @@ function renderLogin(mode = 'login', ten = '') {
       } else {
         u = await rpc('dang_nhap', { p_ten: t, p_mk: m }, false);
       }
-      S.phien = u.phien; ls.set('po_phien', u.phien); S.user = u; await khoiDong();
+      S.phien = u.phien; ls.set('po_phien', u.phien); S.user = u; S.mkTam = m; await khoiDong();
     } catch (err) {
       if (err.message === 'CHUA_DAT_MK') return renderLogin('setup', t.toUpperCase());
       toast(err.message, true);
@@ -141,7 +141,7 @@ function renderLogin(mode = 'login', ten = '') {
 }
 async function dangXuat(silent) {
   if (!silent && S.phien) { try { await rpc('dang_xuat'); } catch (e) {} }
-  S.phien = null; S.user = null; ls.set('po_phien', null); closeModal(); renderLogin();
+  S.phien = null; S.user = null; S.mkTam = null; S.batBuocDoiMk = false; ls.set('po_phien', null); $('#modal').innerHTML = ''; renderLogin();
 }
 
 /* ---------- Tải dữ liệu ---------- */
@@ -152,6 +152,7 @@ async function khoiDong() {
   chonLoai(S.loai, true);
   S.tab = 'tongquan';
   await taiHd();
+  if (S.user.phai_doi_mk) moDoiMk(true);
 }
 function chonLoai(loai, keepNam) {
   S.loai = loai; ls.set('po_loai', loai);
@@ -581,11 +582,14 @@ function hdForm(h) {
 /* ---------- Tài khoản & tỉnh ---------- */
 function vTaiKhoan() {
   if (!S.tk) { rpc('ds_tai_khoan').then(r => { S.tk = r; render(); }).catch(e => toast(e.message, true)); return `<div class="card empty">Đang tải…</div>`; }
-  return `<div class="toolbar"><span class="muted small">Tên đăng nhập của tỉnh là mã tỉnh. Email dùng để gửi thông báo cho tỉnh. Mật khẩu do P.QLHT cấp; tỉnh tự đổi được sau khi đăng nhập.</span></div>
-  <div class="tbl"><table><thead><tr><th>Tên đăng nhập</th><th>Đơn vị</th><th>KV</th><th>Email nhận thông báo</th><th>Mật khẩu</th><th>Đăng nhập gần nhất</th><th></th></tr></thead>
+  const chuaDoi = S.tk.filter(a => a.mk_ban_dau).length;
+  return `<div class="toolbar"><span class="muted small">Tên đăng nhập của tỉnh là mã tỉnh. Mật khẩu ban đầu hiển thị cho P.QLHT đến khi tỉnh đổi mật khẩu (bắt buộc ở lần đăng nhập đầu). ${chuaDoi} tài khoản chưa đổi.</span>
+    <button class="btn sm primary" data-act="xuatTk">${ic('download')}Xuất danh sách tài khoản</button></div>
+  <div class="tbl"><table><thead><tr><th>Tên đăng nhập</th><th>Đơn vị</th><th>KV</th><th>Email nhận thông báo</th><th>Mật khẩu ban đầu</th><th>Tình trạng</th><th>Đăng nhập gần nhất</th><th></th></tr></thead>
   <tbody>${S.tk.map(a => `<tr><td><b>${esc(a.ten_dn)}</b></td><td>${esc(a.vai_tro === 'tinh' ? 'Viettel ' + a.tinh_ten : a.ho_ten || 'Quản trị')}</td><td>${a.kv || ''}</td>
     <td>${a.vai_tro === 'tinh' ? `<input type="email" data-email="${a.tinh_ma}" value="${esc(a.email || '')}" placeholder="email@…" style="width:230px" aria-label="Email ${a.tinh_ma}">` : '<span class="muted small">Cấu hình ở mục Cấu hình</span>'}</td>
-    <td>${a.co_mk ? '<span class="pill k-ok">Đã cấp</span>' : '<span class="pill k-warn">Chưa cấp</span>'}${a.khoa ? ' <span class="pill k-crit">Đang khóa</span>' : ''}</td>
+    <td>${a.mk_ban_dau ? `<span class="mono" style="font-size:13px">${esc(a.mk_ban_dau)}</span> <button class="btn sm" data-act="copyMk" data-v="${esc(a.mk_ban_dau)}" title="Sao chép">Chép</button>` : '<span class="muted small">—</span>'}</td>
+    <td>${!a.co_mk ? '<span class="pill k-warn">Chưa cấp</span>' : a.phai_doi_mk ? '<span class="pill k-warn">Chưa đổi MK</span>' : '<span class="pill k-ok">Đã đổi MK</span>'}${a.khoa ? ' <span class="pill k-crit">Đang khóa</span>' : ''}</td>
     <td>${a.dang_nhap_cuoi ? dmyhm(a.dang_nhap_cuoi) : '<span class="muted">Chưa</span>'}</td>
     <td style="white-space:nowrap">${a.ten_dn !== S.user.ten_dn ? `<button class="btn sm" data-act="capMk" data-v="${esc(a.ten_dn)}">${ic('key')}${a.co_mk ? 'Đặt lại MK' : 'Cấp MK'}</button> <button class="btn sm ${a.khoa ? '' : 'danger'}" data-act="khoaTk" data-v="${esc(a.ten_dn)}" data-k="${a.khoa ? 0 : 1}">${a.khoa ? 'Mở khóa' : 'Khóa'}</button>` : '<span class="muted small">Tài khoản đang dùng</span>'}</td></tr>`).join('')}</tbody></table></div>`;
 }
@@ -701,9 +705,45 @@ async function xuatExcel() {
   toast('Đã xuất ' + fname);
 }
 
+/* ---------- Đổi mật khẩu (bắt buộc lần đầu) ---------- */
+function moDoiMk(batBuoc) {
+  S.batBuocDoiMk = !!batBuoc;
+  const canCu = !(batBuoc && S.mkTam);
+  openModal(`<div class="mh"><h2>${batBuoc ? 'Đổi mật khẩu lần đầu' : 'Đổi mật khẩu'}</h2>${batBuoc ? '' : `<button class="iconbtn" data-act="closeModal" aria-label="Đóng">${ic('x')}</button>`}</div>
+    <form class="mb" id="dmF" novalidate>
+      ${batBuoc ? '<div class="note k-warn">Tài khoản đang dùng mật khẩu ban đầu do P.QLHT cấp. Đơn vị đặt mật khẩu mới để tiếp tục sử dụng phần mềm.</div>' : ''}
+      ${canCu ? '<div class="fg"><label for="o_cu">Mật khẩu hiện tại</label><input type="password" id="o_cu" autocomplete="current-password"></div>' : ''}
+      <div class="fg"><label for="o_moi">Mật khẩu mới (tối thiểu 8 ký tự)</label><input type="password" id="o_moi" autocomplete="new-password"></div>
+      <div class="fg"><label for="o_moi2">Nhập lại mật khẩu mới</label><input type="password" id="o_moi2" autocomplete="new-password"></div></form>
+    <div class="mf">${batBuoc ? `<button class="btn" data-act="logout">Đăng xuất</button>` : '<button class="btn" data-act="closeModal">Hủy</button>'}<button class="btn primary" data-act="doiMkOk">${ic('key')}Đổi mật khẩu</button></div>`, true);
+}
+
+async function xuatTaiKhoan() {
+  if (!window.ExcelJS) return toast('Chưa tải được thư viện Excel', true);
+  S.tk = await rpc('ds_tai_khoan');
+  const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('Tai_khoan');
+  const F = { name: 'Times New Roman', size: 12 }, bd = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+  ws.columns = [6, 9, 30, 8, 16, 18, 32, 18].map(w => ({ width: w }));
+  ws.mergeCells('A1:H1'); ws.getCell('A1').value = 'DANH SÁCH TÀI KHOẢN PHẦN MỀM PO MANAGER – 34 VIETTEL TỈNH/TP';
+  ws.getCell('A1').font = { ...F, size: 14, bold: true }; ws.getCell('A1').alignment = { horizontal: 'center' };
+  ws.mergeCells('A2:H2'); ws.getCell('A2').value = 'Địa chỉ: ' + location.origin + location.pathname + '  ·  Đơn vị bắt buộc đổi mật khẩu ở lần đăng nhập đầu';
+  ws.getCell('A2').font = { ...F, italic: true }; ws.getCell('A2').alignment = { horizontal: 'center' };
+  const h = ['STT', 'Mã tỉnh', 'Viettel tỉnh/TP', 'KV', 'Tên đăng nhập', 'Mật khẩu ban đầu', 'Email nhận thông báo', 'Tình trạng'];
+  const r3 = ws.getRow(4); h.forEach((t, i) => { const c = r3.getCell(i + 1); c.value = t; c.font = { ...F, bold: true }; c.border = bd; c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } }; });
+  S.tk.filter(a => a.vai_tro === 'tinh').forEach((a, i) => {
+    const r = ws.getRow(5 + i);
+    [i + 1, a.tinh_ma, 'Viettel ' + a.tinh_ten, a.kv, a.ten_dn, a.mk_ban_dau || '(đơn vị đã đổi)', a.email || '', a.phai_doi_mk ? 'Chưa đổi MK' : 'Đã đổi MK']
+      .forEach((v, j) => { const c = r.getCell(j + 1); c.value = v; c.font = j === 5 ? { name: 'Consolas', size: 12 } : F; c.border = bd; c.alignment = { horizontal: [2, 6].includes(j) ? 'left' : 'center' }; });
+  });
+  const d = new Date(), dd = String(d.getDate()).padStart(2, '0') + '.' + String(d.getMonth() + 1).padStart(2, '0') + '.' + d.getFullYear();
+  const buf = await wb.xlsx.writeBuffer(), url = URL.createObjectURL(new Blob([buf])), a = document.createElement('a');
+  a.href = url; a.download = `Tài khoản PO Manager – 34 tỉnh (${dd}).xlsx`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
+  toast('Đã xuất danh sách tài khoản');
+}
+
 /* ---------- Modal ---------- */
 function openModal(html, small) { $('#modal').innerHTML = `<div class="modal" data-act="bgModal"><div class="box ${small ? 'sm' : ''}" role="dialog" aria-modal="true">${html}</div></div>`; const f = $('#modal input:not([readonly]),#modal textarea'); if (f) setTimeout(() => f.focus(), 30); }
-function closeModal() { $('#modal').innerHTML = ''; }
+function closeModal() { if (S.batBuocDoiMk && S.user && S.user.phai_doi_mk) return; $('#modal').innerHTML = ''; }
 function xacNhan(tieuDe, noiDung, nut, fn, nguyHiem) {
   openModal(`<div class="mh"><h2>${tieuDe}</h2></div><div class="mb"><div>${noiDung}</div></div><div class="mf"><button class="btn" data-act="closeModal">Hủy</button><button class="btn ${nguyHiem ? 'danger' : 'primary'}" id="xnOk">${nut}</button></div>`, true);
   $('#xnOk').onclick = async () => { $('#xnOk').disabled = true; try { await fn(); closeModal(); } catch (e) { $('#xnOk').disabled = false; } };
@@ -819,20 +859,18 @@ const ACT = {
       <div class="mf"><button class="btn" data-act="closeModal">Hủy</button><button class="btn" data-act="mkCopy">Sao chép</button><button class="btn primary" data-act="mkLuu" data-v="${esc(d.v)}">Lưu mật khẩu</button></div>`, true);
   },
   mkNgauNhien: () => { $('#m_mk').value = matKhauNgauNhien(); },
+  copyMk: d => navigator.clipboard.writeText(d.v).then(() => toast('Đã sao chép mật khẩu'), () => toast('Không sao chép được, bôi đen để chép', true)),
+  xuatTk: () => chay(xuatTaiKhoan),
   mkCopy: () => { const v = $('#m_mk').value; navigator.clipboard.writeText(v).then(() => toast('Đã sao chép'), () => { $('#m_mk').select(); toast('Bôi đen sẵn, nhấn Ctrl+C để sao chép'); }); },
   mkLuu: async d => { await chay(() => rpc('dat_mk_tai_khoan', { p_ten: d.v, p_mk: $('#m_mk').value }), 'Đã lưu mật khẩu cho ' + d.v); closeModal(); S.tk = null; render(); },
   khoaTk: d => xacNhan(d.k === '1' ? 'Khóa tài khoản?' : 'Mở khóa tài khoản?', `Tài khoản <b>${esc(d.v)}</b> ${d.k === '1' ? 'sẽ không đăng nhập được cho tới khi mở khóa.' : 'đăng nhập lại được.'}`, d.k === '1' ? 'Khóa' : 'Mở khóa',
     async () => { await chay(() => rpc('khoa_tai_khoan', { p_ten: d.v, p_khoa: d.k === '1' }), 'Đã cập nhật'); S.tk = null; render(); }, d.k === '1'),
-  doiMk: () => {
-    openModal(`<div class="mh"><h2>Đổi mật khẩu</h2><button class="iconbtn" data-act="closeModal" aria-label="Đóng">${ic('x')}</button></div>
-      <form class="mb" id="dmF"><div class="fg"><label for="o_cu">Mật khẩu hiện tại</label><input type="password" id="o_cu" autocomplete="current-password"></div>
-      <div class="fg"><label for="o_moi">Mật khẩu mới (tối thiểu 8 ký tự)</label><input type="password" id="o_moi" autocomplete="new-password"></div>
-      <div class="fg"><label for="o_moi2">Nhập lại mật khẩu mới</label><input type="password" id="o_moi2" autocomplete="new-password"></div></form>
-      <div class="mf"><button class="btn" data-act="closeModal">Hủy</button><button class="btn primary" data-act="doiMkOk">Đổi mật khẩu</button></div>`, true);
-  },
+  doiMk: () => moDoiMk(false),
   doiMkOk: async () => {
     if ($('#o_moi').value !== $('#o_moi2').value) return toast('Hai lần nhập mật khẩu mới không khớp', true);
-    await chay(() => rpc('doi_mat_khau', { p_cu: $('#o_cu').value, p_moi: $('#o_moi').value }), 'Đã đổi mật khẩu'); closeModal();
+    const cu = $('#o_cu') ? $('#o_cu').value : S.mkTam;
+    await chay(() => rpc('doi_mat_khau', { p_cu: cu, p_moi: $('#o_moi').value }), 'Đã đổi mật khẩu');
+    S.mkTam = null; if (S.user) S.user.phai_doi_mk = false; S.batBuocDoiMk = false; $('#modal').innerHTML = '';
   }
 };
 

@@ -753,7 +753,9 @@ function hdForm(h) {
     <div class="fg"><label for="h_gc">Ghi chú</label><textarea id="h_gc" rows="2">${esc(h.ghi_chu || '')}</textarea></div>
     ${h.id ? '' : '<div class="note k-info">HĐ mới được tạo kèm một dự thảo hạn mức bằng 0 cho 34 tỉnh. Nhập hạn mức ở mục Hạn mức rồi ban hành.</div>'}
   </form>
-  <div class="mf"><button class="btn" data-act="closeModal">Hủy</button><button class="btn primary" data-act="hdLuu" data-v="${h.id || ''}">${ic('check')}Lưu</button></div>`);
+  <div class="mf">${h.id && isQT() ? (() => { const ly = h.so_po ? `đã có ${h.so_po} PO` : h.pb ? 'đã ban hành hạn mức' : '';
+      return `<button class="btn danger" data-act="hdXoa" data-v="${h.id}" ${ly ? `disabled title="Không xóa được: HĐ ${ly}. Chuyển trạng thái sang Đã kết thúc nếu không dùng nữa."` : ''}>${ic('trash')}Xóa HĐ khung</button>${ly ? `<span class="small muted" style="align-self:center">Không xóa được: HĐ ${ly}</span>` : ''}`; })() : ''}
+    <span style="flex:1"></span><button class="btn" data-act="closeModal">Hủy</button><button class="btn primary" data-act="hdLuu" data-v="${h.id || ''}">${ic('check')}Lưu</button></div>`);
 }
 
 /* ---------- Tài khoản & tỉnh ---------- */
@@ -1025,6 +1027,15 @@ const ACT = {
     closeModal(); render(); toast(`Đã áp ${n} tỉnh vào bảng, bấm Lưu dự thảo để lưu`);
   },
   hdMoi: () => hdForm(null),
+  hdXoa: d => {
+    if (!isQT()) return;
+    const h = S.hds.find(x => x.id === Number(d.v)); if (!h) return;
+    xacNhan('Xóa HĐ khung?', `Xóa <b>${esc(nhanHd(h))}</b> cùng các dự thảo hạn mức đi kèm. Chỉ xóa được HĐ chưa có PO và chưa ban hành hạn mức; thao tác được ghi nhật ký.`, 'Xóa HĐ khung', async () => {
+      await chay(() => rpc('xoa_hd', { p_hd: h.id }), 'Đã xóa HĐ khung');
+      S.hds = await rpc('ds_hd'); if (S.hdId === h.id) S.hdId = null;
+      chonLoai(S.hds.some(x => x.loai === S.loai) ? S.loai : (S.hds[0] || {}).loai || S.loai); S.tab = 'hd'; await taiHd();
+    }, true);
+  },
   hdSua: d => hdForm(S.hds.find(h => h.id === Number(d.v))),
   hdLuu: async d => {
     const p = { id: d.v || '', loai: $('#h_loai').value, nam: $('#h_nam').value, so_hd: $('#h_so').value, ten: $('#h_ten').value, doi_tac: $('#h_dt').value, ngay_ky: $('#h_nk').value, ngay_het_han: $('#h_hh').value,

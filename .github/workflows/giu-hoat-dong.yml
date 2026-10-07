@@ -1,0 +1,31 @@
+# Giữ CSDL Supabase luôn hoạt động (gói miễn phí tự tạm dừng nếu 7 ngày không có truy cập)
+name: Giu CSDL hoat dong
+on:
+  schedule:
+    - cron: '17 0,12 * * *'   # 07:17 và 19:17 giờ Việt Nam, mỗi ngày 2 lần
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Goi CSDL Supabase
+        run: |
+          for i in 1 2 3; do
+            curl -fsS -X POST "https://ixhzzvmoqwgzlynfmouc.supabase.co/rest/v1/rpc/ping" \
+              -H "apikey: sb_publishable_iDOvuTEMDAxXCc7KS7IWfg_iOa9vCBr" \
+              -H "Content-Type: application/json" -d '{"p_nguon":"github"}' && exit 0
+            sleep 60
+          done
+          exit 1
+      - uses: actions/checkout@v4
+      - name: Giu lich chay khong bi GitHub tat (repo khong co thay doi trong 45 ngay)
+        run: |
+          last=$(git log -1 --format=%ct)
+          if [ $(( $(date +%s) - last )) -gt 3888000 ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+            git commit --allow-empty -m "Giu lich chay tu dong"
+            git push
+          fi
